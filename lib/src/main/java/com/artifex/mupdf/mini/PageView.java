@@ -249,6 +249,26 @@ public class PageView extends View implements
 			actionListener.onPageViewZoomChanged(viewScale);
 	}
 
+	public synchronized void adjustZoom(float factor) {
+		if (bitmap != null) {
+			float centerX = canvasW / 2.0f;
+			float centerY = canvasH / 2.0f;
+			float pageFocusX = (centerX + scrollX) / viewScale;
+			float pageFocusY = (centerY + scrollY) / viewScale;
+			viewScale *= factor;
+			if (viewScale < minScale) viewScale = minScale;
+			if (viewScale > maxScale) viewScale = maxScale;
+			bitmapW = (int)(bitmap.getWidth() * viewScale / pageScale);
+			bitmapH = (int)(bitmap.getHeight() * viewScale / pageScale);
+			scrollX = (int)(pageFocusX * viewScale - centerX);
+			scrollY = (int)(pageFocusY * viewScale - centerY);
+			scroller.forceFinished(true);
+			invalidate();
+			if (actionListener != null)
+				actionListener.onPageViewZoomChanged(viewScale);
+		}
+	}
+
 	public void goBackward() {
 		scroller.forceFinished(true);
 		if (scrollY <= 0) {

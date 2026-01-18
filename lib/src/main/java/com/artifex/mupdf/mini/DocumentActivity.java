@@ -77,6 +77,7 @@ public class DocumentActivity extends Activity
 	protected boolean hasLoaded;
 	protected boolean isReflowable;
 	protected boolean fitPage;
+	protected boolean cropMargins;
 	protected String title;
 	protected ArrayList<OutlineActivity.Item> flatOutline;
 	protected float layoutW, layoutH, layoutEm;
@@ -169,6 +170,20 @@ public class DocumentActivity extends Activity
 		super.onCreate(savedInstanceState);
 		requestWindowFeature(Window.FEATURE_NO_TITLE);
 		getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+
+		// Enable immersive mode - hide navigation bar
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+			getWindow().setDecorFitsSystemWindows(false);
+		} else {
+			getWindow().getDecorView().setSystemUiVisibility(
+				View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+				| View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+				| View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+				| View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+				| View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+				| View.SYSTEM_UI_FLAG_FULLSCREEN
+			);
+		}
 
 		DisplayMetrics metrics = new DisplayMetrics();
 		getWindowManager().getDefaultDisplay().getMetrics(metrics);
@@ -456,6 +471,25 @@ public class DocumentActivity extends Activity
 				currentPage = history.pop();
 				loadPage();
 			}
+			return true;
+		case KeyEvent.KEYCODE_EQUALS:
+		case KeyEvent.KEYCODE_PLUS:
+			if (pageView != null)
+				pageView.adjustZoom(1.2f);
+			return true;
+		case KeyEvent.KEYCODE_MINUS:
+			if (pageView != null)
+				pageView.adjustZoom(0.83333f);
+			return true;
+		case KeyEvent.KEYCODE_0:
+			if (pageView != null)
+				pageView.adjustZoom(1.0f / pageZoom);
+			return true;
+		case KeyEvent.KEYCODE_C:
+			cropMargins = !cropMargins;
+			loadPage();
+			String cropStatus = cropMargins ? "Crop ON" : "Crop OFF";
+			Toast.makeText(this, cropStatus, Toast.LENGTH_SHORT).show();
 			return true;
 		}
 		return super.onKeyUp(keyCode, event);
@@ -773,11 +807,39 @@ public class DocumentActivity extends Activity
 					Log.i(APP, "load page " + pageNumber);
 					Page page = doc.loadPage(pageNumber);
 					Log.i(APP, "draw page " + pageNumber + " zoom=" + zoom);
+
+					com.artifex.mupdf.fitz.Rect pageBounds = page.getBounds();
+
+					// Apply crop margins if enabled
+					if (cropMargins) {
+						float cropPercent = 0.05f; // 5% crop from each edge
+						float cropX = pageBounds.x1 * cropPercent;
+						float cropY = pageBounds.y1 * cropPercent;
+						pageBounds = new com.artifex.mupdf.fitz.Rect(
+							pageBounds.x0 + cropX,
+							pageBounds.y0 + cropY,
+							pageBounds.x1 - cropX,
+							pageBounds.y1 - cropY
+						);
+					}
+
 					Matrix ctm;
 					if (fitPage)
 						ctm = AndroidDrawDevice.fitPage(page, canvasW, canvasH);
 					else
 						ctm = AndroidDrawDevice.fitPageWidth(page, canvasW);
+
+					// Apply crop by adjusting the transform
+					if (cropMargins) {
+						float cropPercent = 0.05f;
+						com.artifex.mupdf.fitz.Rect origBounds = page.getBounds();
+						float cropX = origBounds.x1 * cropPercent;
+						float cropY = origBounds.y1 * cropPercent;
+						float scale = 1.0f / (1.0f - 2 * cropPercent);
+						Matrix cropMatrix = new Matrix(scale);
+						cropMatrix.translate(-cropX, -cropY);
+						ctm.concat(cropMatrix);
+					}
 					Link[] links = page.getLinks();
 					if (links == null)
 					{
